@@ -1,0 +1,5 @@
+C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows\vktest1.csproj.AssemblyReference.cache
+C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows\vktest1.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows\vktest1.AssemblyInfoInputs.cache
+C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows\vktest1.AssemblyInfo.cs
+C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows\vktest1.csproj.CoreCompileInputs.cache
