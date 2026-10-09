@@ -14,7 +14,7 @@ jobs:
 
     env:
       PROJECT: vktest1/vktest1.csproj
-      ASSEMBLY_NAME: vktest1
+      ASSEMBLY_NAME: WukongBenchmarkAutomator
 
     steps:
       - name: Checkout
