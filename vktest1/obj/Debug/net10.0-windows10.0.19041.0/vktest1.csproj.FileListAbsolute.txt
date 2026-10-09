@@ -29,3 +29,4 @@ C:\Users\max\source\repos\vktest1\vktest1\bin\Debug\net10.0-windows10.0.19041.0\
 C:\Users\max\source\repos\vktest1\vktest1\bin\Debug\net10.0-windows10.0.19041.0\Tesseract.dll
 C:\Users\max\source\repos\vktest1\vktest1\bin\Debug\net10.0-windows10.0.19041.0\tessdata\eng.traineddata
 C:\Users\max\source\repos\vktest1\vktest1\bin\Debug\net10.0-windows10.0.19041.0\tessdata\rus.traineddata
+C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows10.0.19041.0\vktest1.sourcelink.json
