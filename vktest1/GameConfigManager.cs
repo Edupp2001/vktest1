@@ -73,7 +73,8 @@ public class GameConfigManager
         data[SectionName]["UISettingData"] = uiSettings;
 
         parser.WriteFile(_configPath, data);
-        Console.WriteLine("Настройки для CPU-теста применены.");
+        Log.Debug("Настройки для CPU-теста применены.");
+        
     }
 
     public void ApplyGpuSettings()
@@ -105,6 +106,6 @@ public class GameConfigManager
         data[SectionName]["UISettingData"] = uiSettings;
 
         parser.WriteFile(_configPath, data);
-        Console.WriteLine("Настройки для GPU-теста применены.");
+        Log.Debug("Настройки для GPU-теста применены.");
     }
 }

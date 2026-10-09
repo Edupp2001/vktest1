@@ -9,15 +9,10 @@ public class BenchmarkHistoryReader
 
     public BenchmarkHistoryReader()
     {
-        // %TEMP%\b1\BenchMarkHistory\Tool
         _historyFolder = Path.Combine(Path.GetTempPath(), "b1", "BenchMarkHistory", "Tool");
-        Console.WriteLine($"Папка истории: {_historyFolder}");
+        Log.Debug($"Папка истории: {_historyFolder}");
     }
 
-    /// <summary>
-    /// Возвращает timestamp самого свежего файла до запуска бенчмарка.
-    /// Нужно чтобы потом понять, что появился новый файл.
-    /// </summary>
     public DateTime GetLatestFileTimestamp()
     {
         if (!Directory.Exists(_historyFolder)) return DateTime.MinValue;
@@ -28,9 +23,6 @@ public class BenchmarkHistoryReader
         return latest?.LastWriteTimeUtc ?? DateTime.MinValue;
     }
 
-    /// <summary>
-    /// Ждёт появления нового файла в папке истории, но не дольше timeout.
-    /// </summary>
     public FileInfo WaitForNewFile(DateTime previousTimestamp, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
@@ -43,7 +35,7 @@ public class BenchmarkHistoryReader
 
             if (newest != null && newest.LastWriteTimeUtc > previousTimestamp)
             {
-                Console.WriteLine($"[+] Новый файл результатов: {newest.Name}");
+                Log.Debug($"[HIST] Новый файл результатов: {newest.Name}");
                 return newest;
             }
             System.Threading.Thread.Sleep(2000);
@@ -51,10 +43,6 @@ public class BenchmarkHistoryReader
         throw new TimeoutException($"Новый файл результатов не появился за {timeout.TotalSeconds} сек");
     }
 
-    /// <summary>
-    /// Читает нужные поля из JSON. Использует JsonDocument для lazy-доступа —
-    /// массив Records с тысячами кадров не парсится, если его не трогать.
-    /// </summary>
     public BenchmarkResult Read(FileInfo file)
     {
         using var stream = File.OpenRead(file.FullName);
@@ -103,8 +91,4 @@ public class BenchmarkResult
     public int Rtx { get; set; }
     public int Dlss { get; set; }
     public int MotionBlur { get; set; }
-
-    public override string ToString() =>
-        $"Avg={AvgFps:F1} | Max={MaxFps:F1} | Min={MinFps:F1} | P95={P95Fps:F1} " +
-        $"| CPU={CpuAvg:F1}% | GPU={GpuAvg:F1}%";
 }

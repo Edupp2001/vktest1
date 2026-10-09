@@ -10,14 +10,11 @@
 	</PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
-    <PackageReference Include="ini-parser" Version="2.5.2" />
-    <PackageReference Include="System.Drawing.Common" Version="10.0.12" />
-    <PackageReference Include="Tesseract" Version="5.2.0" />
+    <Folder Include="tessdata\" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="tessdata\" />
+    <PackageReference Include="ini-parser" Version="2.5.2" />
   </ItemGroup>
 
   <ItemGroup>

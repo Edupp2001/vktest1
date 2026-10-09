@@ -1,5 +1,0 @@
-C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows10.0.26100.1\vktest1.csproj.AssemblyReference.cache
-C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows10.0.26100.1\vktest1.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows10.0.26100.1\vktest1.AssemblyInfoInputs.cache
-C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows10.0.26100.1\vktest1.AssemblyInfo.cs
-C:\Users\max\source\repos\vktest1\vktest1\obj\Debug\net10.0-windows10.0.26100.1\vktest1.csproj.CoreCompileInputs.cache
