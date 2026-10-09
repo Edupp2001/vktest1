@@ -1,11 +1,15 @@
 {
   "version": 2,
-  "dgSpecHash": "phAQqj9RWQs=",
+  "dgSpecHash": "fhdSiaaVByU=",
   "success": true,
   "projectFilePath": "C:\\Users\\max\\source\\repos\\vktest1\\vktest1\\vktest1.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\max\\.nuget\\packages\\ini-parser\\2.5.2\\ini-parser.2.5.2.nupkg.sha512",
-    "C:\\Users\\max\\.nuget\\packages\\microsoft.windows.sdk.net.ref\\10.0.19041.57\\microsoft.windows.sdk.net.ref.10.0.19041.57.nupkg.sha512"
+    "C:\\Users\\max\\.nuget\\packages\\microsoft.net.illink.tasks\\10.0.12\\microsoft.net.illink.tasks.10.0.12.nupkg.sha512",
+    "C:\\Users\\max\\.nuget\\packages\\microsoft.windows.sdk.net.ref\\10.0.19041.57\\microsoft.windows.sdk.net.ref.10.0.19041.57.nupkg.sha512",
+    "C:\\Users\\max\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\10.0.12\\microsoft.aspnetcore.app.runtime.win-x64.10.0.12.nupkg.sha512",
+    "C:\\Users\\max\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\10.0.12\\microsoft.windowsdesktop.app.runtime.win-x64.10.0.12.nupkg.sha512",
+    "C:\\Users\\max\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\10.0.12\\microsoft.netcore.app.runtime.win-x64.10.0.12.nupkg.sha512"
   ],
   "logs": [
     {

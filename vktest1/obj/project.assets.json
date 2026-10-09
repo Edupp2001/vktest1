@@ -14,6 +14,33 @@
             "related": ".dll.mdb;.xml"
           }
         }
+      },
+      "Microsoft.NET.ILLink.Tasks/10.0.12": {
+        "type": "package",
+        "build": {
+          "build/Microsoft.NET.ILLink.Tasks.props": {}
+        }
+      }
+    },
+    "net10.0-windows10.0.19041.0/win-x64": {
+      "ini-parser/2.5.2": {
+        "type": "package",
+        "compile": {
+          "lib/net20/INIFileParser.dll": {
+            "related": ".dll.mdb;.xml"
+          }
+        },
+        "runtime": {
+          "lib/net20/INIFileParser.dll": {
+            "related": ".dll.mdb;.xml"
+          }
+        }
+      },
+      "Microsoft.NET.ILLink.Tasks/10.0.12": {
+        "type": "package",
+        "build": {
+          "build/Microsoft.NET.ILLink.Tasks.props": {}
+        }
       }
     }
   },
@@ -31,10 +58,61 @@
         "lib/net20/INIFileParser.dll.mdb",
         "lib/net20/INIFileParser.xml"
       ]
+    },
+    "Microsoft.NET.ILLink.Tasks/10.0.12": {
+      "sha512": "xi+BDjFpW+Sb+MHFHaH6Y/gV9I8BluFwRXc1QyCdoZbIK26eNiBeFuMTe/FMwc33G1wdHCyDg7CVTmb8OdQrMQ==",
+      "type": "package",
+      "path": "microsoft.net.illink.tasks/10.0.12",
+      "hasTools": true,
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "Sdk/Sdk.props",
+        "THIRD-PARTY-NOTICES.TXT",
+        "analyzers/dotnet/cs/ILLink.CodeFixProvider.dll",
+        "analyzers/dotnet/cs/ILLink.RoslynAnalyzer.dll",
+        "build/Microsoft.NET.ILLink.Analyzers.props",
+        "build/Microsoft.NET.ILLink.Tasks.props",
+        "build/Microsoft.NET.ILLink.targets",
+        "microsoft.net.illink.tasks.10.0.12.nupkg.sha512",
+        "microsoft.net.illink.tasks.nuspec",
+        "tools/net/ILLink.Tasks.deps.json",
+        "tools/net/ILLink.Tasks.dll",
+        "tools/net/Mono.Cecil.Mdb.dll",
+        "tools/net/Mono.Cecil.Pdb.dll",
+        "tools/net/Mono.Cecil.Rocks.dll",
+        "tools/net/Mono.Cecil.dll",
+        "tools/net/Sdk/Sdk.props",
+        "tools/net/build/Microsoft.NET.ILLink.Analyzers.props",
+        "tools/net/build/Microsoft.NET.ILLink.Tasks.props",
+        "tools/net/build/Microsoft.NET.ILLink.targets",
+        "tools/net/illink.deps.json",
+        "tools/net/illink.dll",
+        "tools/net/illink.runtimeconfig.json",
+        "tools/netframework/ILLink.Tasks.dll",
+        "tools/netframework/ILLink.Tasks.dll.config",
+        "tools/netframework/Mono.Cecil.Mdb.dll",
+        "tools/netframework/Mono.Cecil.Pdb.dll",
+        "tools/netframework/Mono.Cecil.Rocks.dll",
+        "tools/netframework/Mono.Cecil.dll",
+        "tools/netframework/Sdk/Sdk.props",
+        "tools/netframework/System.Buffers.dll",
+        "tools/netframework/System.Collections.Immutable.dll",
+        "tools/netframework/System.Memory.dll",
+        "tools/netframework/System.Numerics.Vectors.dll",
+        "tools/netframework/System.Reflection.Metadata.dll",
+        "tools/netframework/System.Runtime.CompilerServices.Unsafe.dll",
+        "tools/netframework/build/Microsoft.NET.ILLink.Analyzers.props",
+        "tools/netframework/build/Microsoft.NET.ILLink.Tasks.props",
+        "tools/netframework/build/Microsoft.NET.ILLink.targets",
+        "useSharedDesignerContext.txt"
+      ]
     }
   },
   "projectFileDependencyGroups": {
     "net10.0-windows10.0.19041.0": [
+      "Microsoft.NET.ILLink.Tasks >= 10.0.12",
       "ini-parser >= 2.5.2"
     ]
   },
@@ -45,7 +123,7 @@
     "version": "1.0.0",
     "restore": {
       "projectUniqueName": "C:\\Users\\max\\source\\repos\\vktest1\\vktest1\\vktest1.csproj",
-      "projectName": "vktest1",
+      "projectName": "WukongBenchmarkAutomator",
       "projectPath": "C:\\Users\\max\\source\\repos\\vktest1\\vktest1\\vktest1.csproj",
       "packagesPath": "C:\\Users\\max\\.nuget\\packages\\",
       "outputPath": "C:\\Users\\max\\source\\repos\\vktest1\\vktest1\\obj\\",
@@ -85,6 +163,12 @@
         "framework": "net10.0-windows10.0.19041",
         "targetAlias": "net10.0-windows10.0.19041.0",
         "dependencies": {
+          "Microsoft.NET.ILLink.Tasks": {
+            "suppressParent": "All",
+            "target": "Package",
+            "version": "[10.0.12, )",
+            "autoReferenced": true
+          },
           "ini-parser": {
             "target": "Package",
             "version": "[2.5.2, )"
@@ -103,8 +187,20 @@
         "warn": true,
         "downloadDependencies": [
           {
+            "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
+            "version": "[10.0.12, 10.0.12]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Runtime.win-x64",
+            "version": "[10.0.12, 10.0.12]"
+          },
+          {
             "name": "Microsoft.Windows.SDK.NET.Ref",
             "version": "[10.0.19041.57, 10.0.19041.57]"
+          },
+          {
+            "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+            "version": "[10.0.12, 10.0.12]"
           }
         ],
         "frameworkReferences": {
@@ -113,9 +209,6 @@
           },
           "Microsoft.Windows.SDK.NET.Ref.Windows": {
             "privateAssets": "all"
-          },
-          "Microsoft.WindowsDesktop.App": {
-            "privateAssets": "none"
           }
         },
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.401/PortableRuntimeIdentifierGraph.json",
@@ -124,8 +217,6 @@
           "Microsoft.VisualBasic": "(,10.4.32767]",
           "Microsoft.Win32.Primitives": "(,4.3.32767]",
           "Microsoft.Win32.Registry": "(,5.0.32767]",
-          "Microsoft.Win32.Registry.AccessControl": "(,10.0.32767]",
-          "Microsoft.Win32.SystemEvents": "(,10.0.32767]",
           "runtime.any.System.Collections": "(,4.3.32767]",
           "runtime.any.System.Diagnostics.Tools": "(,4.3.32767]",
           "runtime.any.System.Diagnostics.Tracing": "(,4.3.32767]",
@@ -266,7 +357,6 @@
           "runtime.win8-arm.runtime.native.System.IO.Compression": "(,4.3.32767]",
           "System.AppContext": "(,4.3.32767]",
           "System.Buffers": "(,5.0.32767]",
-          "System.CodeDom": "(,10.0.32767]",
           "System.Collections": "(,4.3.32767]",
           "System.Collections.Concurrent": "(,4.3.32767]",
           "System.Collections.Immutable": "(,10.0.32767]",
@@ -277,28 +367,22 @@
           "System.ComponentModel.EventBasedAsync": "(,4.3.32767]",
           "System.ComponentModel.Primitives": "(,4.3.32767]",
           "System.ComponentModel.TypeConverter": "(,4.3.32767]",
-          "System.Configuration.ConfigurationManager": "(,10.0.32767]",
           "System.Console": "(,4.3.32767]",
           "System.Data.Common": "(,4.3.32767]",
           "System.Data.DataSetExtensions": "(,4.4.32767]",
           "System.Diagnostics.Contracts": "(,4.3.32767]",
           "System.Diagnostics.Debug": "(,4.3.32767]",
           "System.Diagnostics.DiagnosticSource": "(,10.0.32767]",
-          "System.Diagnostics.EventLog": "(,10.0.32767]",
           "System.Diagnostics.FileVersionInfo": "(,4.3.32767]",
-          "System.Diagnostics.PerformanceCounter": "(,10.0.32767]",
           "System.Diagnostics.Process": "(,4.3.32767]",
           "System.Diagnostics.StackTrace": "(,4.3.32767]",
           "System.Diagnostics.TextWriterTraceListener": "(,4.3.32767]",
           "System.Diagnostics.Tools": "(,4.3.32767]",
           "System.Diagnostics.TraceSource": "(,4.3.32767]",
           "System.Diagnostics.Tracing": "(,4.3.32767]",
-          "System.DirectoryServices": "(,10.0.32767]",
-          "System.Drawing.Common": "(,10.0.32767]",
           "System.Drawing.Primitives": "(,4.3.32767]",
           "System.Dynamic.Runtime": "(,4.3.32767]",
           "System.Formats.Asn1": "(,10.0.32767]",
-          "System.Formats.Nrbf": "(,10.0.32767]",
           "System.Formats.Tar": "(,10.0.32767]",
           "System.Globalization": "(,4.3.32767]",
           "System.Globalization.Calendars": "(,4.3.32767]",
@@ -313,7 +397,6 @@
           "System.IO.FileSystem.Watcher": "(,4.3.32767]",
           "System.IO.IsolatedStorage": "(,4.3.32767]",
           "System.IO.MemoryMappedFiles": "(,4.3.32767]",
-          "System.IO.Packaging": "(,10.0.32767]",
           "System.IO.Pipelines": "(,10.0.32767]",
           "System.IO.Pipes": "(,4.3.32767]",
           "System.IO.Pipes.AccessControl": "(,5.0.32767]",
@@ -350,7 +433,6 @@
           "System.Reflection.Metadata": "(,10.0.32767]",
           "System.Reflection.Primitives": "(,4.3.32767]",
           "System.Reflection.TypeExtensions": "(,4.3.32767]",
-          "System.Resources.Extensions": "(,10.0.32767]",
           "System.Resources.Reader": "(,4.3.32767]",
           "System.Resources.ResourceManager": "(,4.3.32767]",
           "System.Resources.Writer": "(,4.3.32767]",
@@ -374,12 +456,8 @@
           "System.Security.Cryptography.Csp": "(,4.3.32767]",
           "System.Security.Cryptography.Encoding": "(,4.3.32767]",
           "System.Security.Cryptography.OpenSsl": "(,5.0.32767]",
-          "System.Security.Cryptography.Pkcs": "(,10.0.32767]",
           "System.Security.Cryptography.Primitives": "(,4.3.32767]",
-          "System.Security.Cryptography.ProtectedData": "(,10.0.32767]",
           "System.Security.Cryptography.X509Certificates": "(,4.3.32767]",
-          "System.Security.Cryptography.Xml": "(,10.0.32767]",
-          "System.Security.Permissions": "(,10.0.32767]",
           "System.Security.Principal": "(,4.3.32767]",
           "System.Security.Principal.Windows": "(,5.0.32767]",
           "System.Security.SecureString": "(,4.3.32767]",
@@ -401,7 +479,6 @@
           "System.Threading.ThreadPool": "(,4.3.32767]",
           "System.Threading.Timer": "(,4.3.32767]",
           "System.ValueTuple": "(,4.5.32767]",
-          "System.Windows.Extensions": "(,10.0.32767]",
           "System.Xml.ReaderWriter": "(,4.3.32767]",
           "System.Xml.XDocument": "(,4.3.32767]",
           "System.Xml.XmlDocument": "(,4.3.32767]",
@@ -409,6 +486,11 @@
           "System.Xml.XPath": "(,4.3.32767]",
           "System.Xml.XPath.XDocument": "(,5.0.32767]"
         }
+      }
+    },
+    "runtimes": {
+      "win-x64": {
+        "#import": []
       }
     }
   },

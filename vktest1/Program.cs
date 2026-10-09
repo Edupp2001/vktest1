@@ -1,25 +1,51 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-// ===================== АРГУМЕНТЫ КОМАНДНОЙ СТРОКИ =====================
+// ===================== ГЛОБАЛЬНЫЕ НАСТРОЙКИ =====================
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+Console.OutputEncoding = Encoding.UTF8;
+
+// ===================== АРГУМЕНТЫ =====================
 bool verbose = args.Any(a =>
     a.Equals("-log", StringComparison.OrdinalIgnoreCase) ||
     a.Equals("--log", StringComparison.OrdinalIgnoreCase) ||
     a.Equals("-v", StringComparison.OrdinalIgnoreCase));
 
 Log.Verbose = verbose;
-Console.OutputEncoding = Encoding.UTF8;
 
 // ===================== КОНФИГУРАЦИЯ =====================
 const int STEAM_APP_ID = 3132990;
+const string GAME_PROCESS = "b1-Win64-Shipping";
 
 string gamePath = @"C:\Program Files (x86)\Steam\steamapps\common\Black Myth Wukong Benchmark Tool";
 string iniPath = Path.Combine(gamePath, @"b1\Saved\Config\Windows\GameUserSettings.ini");
 string exePath = Path.Combine(gamePath, @"b1\Binaries\Win64\b1-Win64-Shipping.exe");
+
+// ===================== ПРЕДВАРИТЕЛЬНЫЕ ПРОВЕРКИ =====================
+if (!File.Exists(iniPath))
+{
+    Log.Error($"Не найден конфиг игры: {iniPath}");
+    Log.Error("Проверьте, что Black Myth: Wukong Benchmark Tool установлен.");
+    Environment.Exit(1);
+}
+
+if (!File.Exists(exePath))
+{
+    Log.Error($"Не найден исполняемый файл игры: {exePath}");
+    Environment.Exit(1);
+}
+
+if (Process.GetProcessesByName(GAME_PROCESS).Length > 0)
+{
+    Log.Error($"Игра уже запущена ({GAME_PROCESS}). Закройте её и попробуйте снова.");
+    Environment.Exit(1);
+}
 
 Log.Debug("=== Параметры запуска ===");
 Log.Debug($"  GamePath : {gamePath}");
@@ -31,17 +57,20 @@ Log.Debug("");
 
 // ===================== ИНИЦИАЛИЗАЦИЯ =====================
 var config = new GameConfigManager(iniPath);
-var history = new BenchmarkHistoryReader();
+var history = new BenchmarkHistoryReader(GAME_PROCESS);
+
 config.Backup();
 
-// Регистрируем cleanup ДО запуска игры. Теперь любой способ закрытия
-// приложения корректно остановит игру и восстановит конфиг.
+// Регистрируем graceful shutdown ДО запуска игры.
 GracefulShutdown.Register(() =>
 {
     Log.Warn("Останавливаем игру и восстанавливаем GameUserSettings.ini...");
     KillAll();
     try { config.Restore(); } catch { }
 });
+
+int exitCode = 0;
+BenchmarkReport? report = null;
 
 try
 {
@@ -50,7 +79,9 @@ try
     config.ApplyCpuSettings();
     var (cpuJson, cpuMem) = await RunOneBenchmark(exePath, STEAM_APP_ID, history);
     KillAll();
-    await Task.Delay(5000);
+
+    // Небольшая пауза — чтобы Steam/игра корректно завершили свои процессы.
+    await WaitForProcessExitAsync(GAME_PROCESS, TimeSpan.FromSeconds(15));
 
     // ===================== GPU-ТЕСТ =====================
     Log.Info("");
@@ -59,15 +90,42 @@ try
     var (gpuJson, gpuMem) = await RunOneBenchmark(exePath, STEAM_APP_ID, history);
     KillAll();
 
-    // ===================== ИТОГОВЫЙ ОТЧЁТ =====================
+    // ===================== ОТЧЁТ =====================
+    report = new BenchmarkReport
+    {
+        System = new BenchmarkReport.SystemInfoDto
+        {
+            Cpu = cpuJson.CpuModel,
+            Gpu = cpuJson.GpuModel,
+            GpuDriver = cpuJson.GpuDriver,
+            Ram = cpuJson.SysMem,
+            VideoMem = cpuJson.VideoMem,
+        },
+        Cpu = new BenchmarkReport.BenchmarkPair { Json = cpuJson, Memory = cpuMem },
+        Gpu = new BenchmarkReport.BenchmarkPair { Json = gpuJson, Memory = gpuMem },
+        Validation = new BenchmarkReport.ValidationDto
+        {
+            CpuAvgDelta = Math.Abs(cpuJson.AvgFps - cpuMem.Avg),
+            CpuP5Delta = Math.Abs(cpuJson.P95Fps - cpuMem.P5),
+            GpuAvgDelta = Math.Abs(gpuJson.AvgFps - gpuMem.Avg),
+            GpuP5Delta = Math.Abs(gpuJson.P95Fps - gpuMem.P5),
+        }
+    };
+
     Log.Info("");
     PrintReport(cpuJson, cpuMem, gpuJson, gpuMem);
+
+    var reportPath = report.SaveToFile();
+    Log.Info($"Отчёт сохранён: {reportPath}");
 }
 catch (Exception ex)
 {
-    Log.Error($"Критическая ошибка: {ex.Message}");
-    Environment.ExitCode = 1;
+    Log.Error($"Ошибка: {ex.Message}");
+    exitCode = ex is FileNotFoundException ? 1 : 2;
 }
+
+
+Environment.Exit(exitCode);
 
 // ============================================================
 //                  ЛОКАЛЬНЫЕ ФУНКЦИИ
@@ -85,9 +143,7 @@ static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
 
     if (!viaSteam)
     {
-        // Fallback: прямой запуск .exe. Здесь попап Steam ГАРАНТИРОВАННО появится.
         Log.Warn("Steam-launch не удался, fallback на прямой запуск .exe");
-        Log.Warn("Ожидается диалог Steam — будет закрыт автоматически");
         Process.Start(new ProcessStartInfo
         {
             FileName = exePath,
@@ -95,8 +151,6 @@ static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(exePath)!
         });
-
-        // Ждём и закрываем попап только в этом сценарии.
         await SteamPopupHandler.DismissAsync(TimeSpan.FromSeconds(20));
     }
     else
@@ -104,14 +158,12 @@ static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
         Log.Debug("[STEAM] Запуск через -applaunch: диалог не ожидается");
     }
 
-    // Фоновой монитор памяти.
     using var monitor = new MemoryFpsMonitor("b1-Win64-Shipping");
     monitor.Start();
     Log.Debug("[MEM] Сэмплирование запущено");
 
     Log.Info("Ожидание результатов бенчмарка...");
-    var file = history.WaitForNewFile(lastTimestamp, TimeSpan.FromMinutes(5));
-    await Task.Delay(1500);
+    var file = await history.WaitForNewFileAsync(lastTimestamp);
 
     monitor.Stop();
     var memStats = monitor.GetStats();
@@ -119,6 +171,17 @@ static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
 
     Log.Debug($"Файл результатов: {file.Name}");
     return (jsonResult, memStats);
+}
+
+static async Task WaitForProcessExitAsync(string processName, TimeSpan timeout)
+{
+    var deadline = DateTime.UtcNow + timeout;
+    while (DateTime.UtcNow < deadline)
+    {
+        if (Process.GetProcessesByName(processName).Length == 0) return;
+        await Task.Delay(250);
+    }
+    Log.Warn($"Процесс {processName} не завершился за {timeout.TotalSeconds:F0}с");
 }
 
 static void PrintReport(BenchmarkResult cpuJ, MemoryFpsStats cpuM,
@@ -157,7 +220,7 @@ static void PrintReport(BenchmarkResult cpuJ, MemoryFpsStats cpuM,
 
     Log.Raw("Валидация (JSON vs live memory sampling):");
     Log.Raw($"  CPU:  ΔAvg = {Math.Abs(cpuJ.AvgFps - cpuM.Avg):F2} FPS, ΔP5 = {Math.Abs(cpuJ.P95Fps - cpuM.P5):F0} FPS");
-    Log.Raw($"  GPU:  ΔAvg = {Math.Abs(gpuJ.AvgFps - gpuM.Avg):F2} FPS, ΔP5 = {Math.Abs(gpuJ.P95Fps - cpuM.P5):F0} FPS");
+    Log.Raw($"  GPU:  ΔAvg = {Math.Abs(gpuJ.AvgFps - gpuM.Avg):F2} FPS, ΔP5 = {Math.Abs(gpuJ.P95Fps - gpuM.P5):F0} FPS");
 }
 
 static void PrintRow(string label, double json, double mem)
@@ -172,11 +235,7 @@ static void KillAll()
     {
         foreach (var p in Process.GetProcessesByName(name))
         {
-            try
-            {
-                p.Kill(entireProcessTree: true);
-                Log.Debug($"Убит {name} PID={p.Id}");
-            }
+            try { p.Kill(entireProcessTree: true); Log.Debug($"Убит {name} PID={p.Id}"); }
             catch { }
         }
     }

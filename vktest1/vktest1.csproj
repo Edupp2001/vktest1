@@ -5,25 +5,23 @@
 		<TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<UseWindowsForms>true</UseWindowsForms>
-		<UseWPF>true</UseWPF>
+
+		<!-- Release-настройки -->
+		<AssemblyName>WukongBenchmarkAutomator</AssemblyName>
+		<Version>1.0.0</Version>
+		<Authors>Max</Authors>
+		<Description>Black Myth: Wukong Benchmark Automator with cross-validation</Description>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<PublishSingleFile>true</PublishSingleFile>
+		<SelfContained>true</SelfContained>
+		<PublishTrimmed>false</PublishTrimmed>
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<DebugType>none</DebugType>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="tessdata\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="ini-parser" Version="2.5.2" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="tessdata\eng.traineddata">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="tessdata\rus.traineddata">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>

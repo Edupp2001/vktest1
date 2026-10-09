@@ -107,7 +107,9 @@ public class MemoryFpsMonitor : IDisposable
                         continue;
 
                     float v = BitConverter.ToSingle(buf, 0);
-                    if (v > 0 && v < 2000 && !float.IsNaN(v) && !float.IsInfinity(v))
+
+                    // Отсекаем всё, что ниже 5 FPS: это либо pre-loading, либо мусор чтения.
+                    if (v >= 5 && v < 2000 && !float.IsNaN(v) && !float.IsInfinity(v))
                     {
                         ap.HasValidFps = true;
                         fps = (int)Math.Round(v);
@@ -157,14 +159,25 @@ public class MemoryFpsMonitor : IDisposable
         if (samples.Count < 50)
             return new MemoryFpsStats { SampleCount = samples.Count, RawSampleCount = samples.Count };
 
-        var sortedAll = samples.OrderBy(x => x).ToList();
-        double median = sortedAll[sortedAll.Count / 2];
-        double lo = median * 0.4;
-        double hi = median * 2.5;
+        // === Адаптивный эталон по хвосту выборки ===
+        // Бенчмарк заканчивается в геймплейной сцене, поэтому последние сэмплы
+        // надёжно описывают "нормальный" FPS. Медиана хвоста — наш якорь.
+        // Это устойчиво к warmup/меню, которые могут занимать до 50% выборки.
+        int tailSize = Math.Max(20, samples.Count / 20); // ~5% выборки или минимум 20
+        var tail = samples.Skip(samples.Count - tailSize).OrderBy(x => x).ToList();
+        double reference = tail[tail.Count / 2];
+
+        // Симметричный коридор ±50% от эталона.
+        // Warmup-выбросы (в 2-3x выше геймплея) гарантированно отсекаются.
+        double lo = reference * 0.5;
+        double hi = reference * 1.5;
         var filtered = samples.Where(x => x >= lo && x <= hi).ToList();
-        if (filtered.Count == 0) filtered = samples;
+
+        // Защита: если фильтр отсёк слишком много — значит эталон ненадёжен, берём всё.
+        if (filtered.Count < 20) filtered = samples;
 
         var sorted = filtered.OrderBy(x => x).ToList();
+        var sortedAll = samples.OrderBy(x => x).ToList();
         var end = _stoppedAt ?? DateTime.UtcNow;
 
         return new MemoryFpsStats
@@ -172,7 +185,7 @@ public class MemoryFpsMonitor : IDisposable
             SampleCount = sorted.Count,
             RawSampleCount = samples.Count,
             OutliersRemoved = samples.Count - filtered.Count,
-            Median = median,
+            Median = sortedAll[sortedAll.Count / 2],
             Avg = filtered.Average(),
             Min = sorted.First(),
             Max = sorted.Last(),

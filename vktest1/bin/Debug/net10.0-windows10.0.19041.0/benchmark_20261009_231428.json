@@ -1,0 +1,82 @@
+{
+  "GeneratedAt": "2026-10-09T20:14:28.3376717Z",
+  "System": {
+    "Cpu": "AMD Ryzen 5 7500F 6-Core Processor",
+    "Gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "GpuDriver": "591.44",
+    "Ram": "32GB",
+    "VideoMem": "12GB"
+  },
+  "Cpu": {
+    "Json": {
+      "Timestamp": 1791576726,
+      "AvgFps": 112,
+      "MaxFps": 142,
+      "MinFps": 67,
+      "P95Fps": 104,
+      "CpuAvg": 1,
+      "GpuAvg": 99,
+      "CpuModel": "AMD Ryzen 5 7500F 6-Core Processor",
+      "GpuModel": "NVIDIA GeForce RTX 4070 SUPER",
+      "GpuDriver": "591.44",
+      "SysMem": "32GB",
+      "VideoMem": "12GB",
+      "Resolution": "1280 \u00D7 720",
+      "QualityLevel": 1,
+      "Rtx": 0,
+      "Dlss": 2,
+      "MotionBlur": 0
+    },
+    "Memory": {
+      "SampleCount": 693,
+      "RawSampleCount": 693,
+      "OutliersRemoved": 0,
+      "Median": 129,
+      "Avg": 165.4083694083694,
+      "Min": 0,
+      "Max": 326,
+      "P1": 0,
+      "P5": 104,
+      "Duration": "00:00:53.4964256"
+    }
+  },
+  "Gpu": {
+    "Json": {
+      "Timestamp": 1791576866,
+      "AvgFps": 37,
+      "MaxFps": 49,
+      "MinFps": 30,
+      "P95Fps": 32,
+      "CpuAvg": 1,
+      "GpuAvg": 99,
+      "CpuModel": "AMD Ryzen 5 7500F 6-Core Processor",
+      "GpuModel": "NVIDIA GeForce RTX 4070 SUPER",
+      "GpuDriver": "591.44",
+      "SysMem": "32GB",
+      "VideoMem": "12GB",
+      "Resolution": "1920 \u00D7 1080",
+      "QualityLevel": 6,
+      "Rtx": 3,
+      "Dlss": 2,
+      "MotionBlur": 0
+    },
+    "Memory": {
+      "SampleCount": 1773,
+      "RawSampleCount": 2075,
+      "OutliersRemoved": 302,
+      "Median": 38,
+      "Avg": 37.443880428652,
+      "Min": 31,
+      "Max": 48,
+      "P1": 32,
+      "P5": 32,
+      "Duration": "00:02:19.9438087"
+    }
+  },
+  "Validation": {
+    "CpuAvgDelta": 53.408369408369396,
+    "CpuP5Delta": 0,
+    "GpuAvgDelta": 0.44388042865200106,
+    "GpuP5Delta": 0
+  }
+}

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("vktest1")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4528d95486c2f97c4555fc53912fc6da9ece29f9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+288362c530d1bd4d713118a022d7d880652baea6")]
 [assembly: System.Reflection.AssemblyProductAttribute("vktest1")]
 [assembly: System.Reflection.AssemblyTitleAttribute("vktest1")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

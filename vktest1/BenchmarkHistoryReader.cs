@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -6,10 +7,12 @@ using System.Text.Json;
 public class BenchmarkHistoryReader
 {
     private readonly string _historyFolder;
+    private readonly string _gameProcessName;
 
-    public BenchmarkHistoryReader()
+    public BenchmarkHistoryReader(string gameProcessName = "b1-Win64-Shipping")
     {
         _historyFolder = Path.Combine(Path.GetTempPath(), "b1", "BenchMarkHistory", "Tool");
+        _gameProcessName = gameProcessName;
         Log.Debug($"Папка истории: {_historyFolder}");
     }
 
@@ -23,24 +26,72 @@ public class BenchmarkHistoryReader
         return latest?.LastWriteTimeUtc ?? DateTime.MinValue;
     }
 
-    public FileInfo WaitForNewFile(DateTime previousTimestamp, TimeSpan timeout)
+    /// <summary>
+    /// Ждёт появления нового файла результатов. Без фиксированного таймаута:
+    /// выход происходит по появлению файла ИЛИ по смерти игрового процесса.
+    /// </summary>
+    public async Task<FileInfo> WaitForNewFileAsync(DateTime previousTimestamp)
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            var newest = new DirectoryInfo(_historyFolder)
-                .GetFiles("*", SearchOption.TopDirectoryOnly)
-                .OrderByDescending(f => f.LastWriteTimeUtc)
-                .FirstOrDefault();
+        int missingProcessCount = 0;
 
+        while (true)
+        {
+            var newest = FindNewestFile();
             if (newest != null && newest.LastWriteTimeUtc > previousTimestamp)
             {
                 Log.Debug($"[HIST] Новый файл результатов: {newest.Name}");
+                await WaitForFileStableAsync(newest);
                 return newest;
             }
-            System.Threading.Thread.Sleep(2000);
+
+            // Проверяем, жив ли ещё процесс игры. Если игра упала — нет смысла ждать.
+            bool gameAlive = Process.GetProcessesByName(_gameProcessName).Length > 0;
+            if (!gameAlive)
+            {
+                missingProcessCount++;
+                // Даём 5 секунд форы: файл может появиться с задержкой после смерти процесса.
+                if (missingProcessCount >= 10)
+                    throw new Exception("Игровой процесс завершился, но файл результатов не появился");
+            }
+            else
+            {
+                missingProcessCount = 0;
+            }
+
+            await Task.Delay(500);
         }
-        throw new TimeoutException($"Новый файл результатов не появился за {timeout.TotalSeconds} сек");
+    }
+
+    /// <summary>
+    /// Дожидается, пока файл перестанет расти. Заменяет фиксированный Sleep(1500).
+    /// </summary>
+    private static async Task WaitForFileStableAsync(FileInfo file)
+    {
+        long lastSize = -1;
+        int stableCount = 0;
+
+        while (stableCount < 3)
+        {
+            try
+            {
+                long size = new FileInfo(file.FullName).Length;
+                if (size == lastSize && size > 0) stableCount++;
+                else stableCount = 0;
+                lastSize = size;
+            }
+            catch { /* файл ещё не готов к чтению */ }
+
+            await Task.Delay(200);
+        }
+    }
+
+    private FileInfo? FindNewestFile()
+    {
+        if (!Directory.Exists(_historyFolder)) return null;
+        return new DirectoryInfo(_historyFolder)
+            .GetFiles("*", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .FirstOrDefault();
     }
 
     public BenchmarkResult Read(FileInfo file)
