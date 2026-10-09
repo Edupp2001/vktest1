@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    env:
+      PROJECT: vktest1/vktest1.csproj
+      ASSEMBLY_NAME: vktest1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore ${{ env.PROJECT }}
+
+      - name: Publish
+        run: >
+          dotnet publish ${{ env.PROJECT }}
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=embedded
+          -o publish
+
+      - name: Verify exe exists
+        shell: pwsh
+        run: |
+          $exe = "publish/${{ env.ASSEMBLY_NAME }}.exe"
+          if (-not (Test-Path $exe)) {
+              Write-Host "Содержимое publish/:"
+              Get-ChildItem publish -ErrorAction SilentlyContinue | Format-Table Name, Length
+              throw "Ожидаемый exe не найден: $exe"
+          }
+          Get-ChildItem publish | Format-Table Name, Length
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: publish/${{ env.ASSEMBLY_NAME }}.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
