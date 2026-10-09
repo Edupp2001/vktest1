@@ -6,24 +6,30 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class MemoryFpsMonitor : IDisposable
+public sealed class MemoryFpsMonitor : IDisposable
 {
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress,
-        byte[] lpBuffer, int dwSize, out IntPtr lpNumberOfBytesRead);
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReadProcessMemory(
+        IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, int dwSize, out IntPtr lpNumberOfBytesRead);
 
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr hObject);
 
     private const uint PROCESS_VM_READ = 0x0010;
     private const uint PROCESS_QUERY_INFORMATION = 0x0400;
+
+    // Эти адреса привязаны к конкретной версии b1-Win64-Shipping.exe. 
+    // При обновлении игры их нужно пересчитывать. 
+    // Считаю, что benchmark tool более обновляться не будет
     private const long MODULE_BASE = 0x140000000L;
     private static readonly long[] FPS_OFFSETS = { 0x1BA02BE8L, 0x1B7164FCL };
 
-    private class AttachedProcess
+    private sealed class AttachedProcess
     {
         public int Pid;
         public IntPtr Handle;
@@ -34,81 +40,103 @@ public class MemoryFpsMonitor : IDisposable
     private readonly List<int> _samples = new();
     private readonly object _lock = new();
     private readonly List<AttachedProcess> _attached = new();
+    private readonly Stopwatch _watch = new();
 
     private CancellationTokenSource? _cts;
     private Task? _worker;
-    private DateTime _startedAt;
-    private DateTime? _stoppedAt;
-    public int LastFps { get; private set; }
+
+    private volatile int _lastFps;
+    public int LastFps => _lastFps;
+
     public int SampleCount { get { lock (_lock) return _samples.Count; } }
 
-    public MemoryFpsMonitor(string processName) => _processName = processName;
+    [ThreadStatic] private static byte[]? t_readBuffer;
+
+    public MemoryFpsMonitor(string processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName))
+            throw new ArgumentException("Имя процесса не задано", nameof(processName));
+        _processName = processName;
+    }
 
     public void Start()
     {
+        if (_cts != null) throw new InvalidOperationException("Монитор уже запущен");
+
         _cts = new CancellationTokenSource();
-        _startedAt = DateTime.UtcNow;
-        _worker = Task.Run(() => Loop(_cts.Token));
+        _watch.Restart();
+        _worker = Task.Run(() => LoopAsync(_cts.Token));
     }
 
     public void Stop()
     {
         _cts?.Cancel();
-        try { _worker?.Wait(TimeSpan.FromSeconds(3)); } catch { }
-        _stoppedAt = DateTime.UtcNow;
+        try { _worker?.Wait(TimeSpan.FromSeconds(3)); }
+        catch (AggregateException ex) { Log.Debug($"[MEM] Worker завершился с ошибкой: {ex.InnerException?.Message}"); }
+        catch (Exception ex) { Log.Debug($"[MEM] Worker wait failed: {ex.Message}"); }
+        _watch.Stop();
     }
 
     private void RefreshAttached()
     {
-        var alive = new HashSet<int>(Process.GetProcessesByName(_processName).Select(p => p.Id));
-
-        for (int i = _attached.Count - 1; i >= 0; i--)
+        var processes = Process.GetProcessesByName(_processName);
+        try
         {
-            if (!alive.Contains(_attached[i].Pid))
+            var aliveIds = new HashSet<int>(processes.Select(p => p.Id));
+
+            for (int i = _attached.Count - 1; i >= 0; i--)
             {
-                try { CloseHandle(_attached[i].Handle); } catch { }
-                _attached.RemoveAt(i);
+                if (!aliveIds.Contains(_attached[i].Pid))
+                {
+                    try { CloseHandle(_attached[i].Handle); } catch { }
+                    _attached.RemoveAt(i);
+                }
+            }
+
+            foreach (var proc in processes)
+            {
+                if (_attached.Any(a => a.Pid == proc.Id)) continue;
+
+                var h = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, proc.Id);
+                if (h == IntPtr.Zero) continue;
+
+                long realBase;
+                try { realBase = proc.MainModule!.BaseAddress.ToInt64(); }
+                catch { CloseHandle(h); continue; }
+
+                if (realBase != MODULE_BASE)
+                {
+                    CloseHandle(h);
+                    continue;
+                }
+
+                Log.Debug($"[MEM] Прицеплен к PID={proc.Id} (Base=0x{realBase:X})");
+                _attached.Add(new AttachedProcess { Pid = proc.Id, Handle = h });
             }
         }
-
-        foreach (var proc in Process.GetProcessesByName(_processName))
+        finally
         {
-            if (_attached.Any(a => a.Pid == proc.Id)) continue;
-
-            var h = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, proc.Id);
-            if (h == IntPtr.Zero) continue;
-
-            long realBase = 0;
-            try { realBase = proc.MainModule!.BaseAddress.ToInt64(); }
-            catch { CloseHandle(h); continue; }
-
-            if (realBase != MODULE_BASE)
-            {
-                CloseHandle(h);
-                continue;
-            }
-
-            Log.Debug($"[MEM] Прицеплен к PID={proc.Id} (Base=0x{realBase:X})");
-            _attached.Add(new AttachedProcess { Pid = proc.Id, Handle = h });
+            foreach (var p in processes) p.Dispose();
         }
     }
 
     private bool TryReadFps(out int fps)
     {
         fps = 0;
+        var buf = t_readBuffer ??= new byte[4];
+
         foreach (var ap in _attached)
         {
             foreach (var offset in FPS_OFFSETS)
             {
                 try
                 {
-                    byte[] buf = new byte[4];
-                    if (!ReadProcessMemory(ap.Handle, (IntPtr)(MODULE_BASE + offset), buf, 4, out _))
+                    if (!ReadProcessMemory(ap.Handle, (IntPtr)(MODULE_BASE + offset), buf, 4, out var read))
                         continue;
+                    if (read.ToInt64() != 4) continue;
 
                     float v = BitConverter.ToSingle(buf, 0);
 
-                    // Отсекаем всё, что ниже 5 FPS: это либо pre-loading, либо мусор чтения.
                     if (v >= 5 && v < 2000 && !float.IsNaN(v) && !float.IsInfinity(v))
                     {
                         ap.HasValidFps = true;
@@ -116,38 +144,41 @@ public class MemoryFpsMonitor : IDisposable
                         return true;
                     }
                 }
-                catch { }
+                catch { /* чтение упало — попробуем следующий оффсет/процесс */ }
             }
         }
         return false;
     }
 
-    private async Task Loop(CancellationToken ct)
+    private async Task LoopAsync(CancellationToken ct)
     {
         int tick = 0;
         while (!ct.IsCancellationRequested)
         {
-            if (tick % 40 == 0)
-                RefreshAttached();
+            if (tick % 40 == 0) RefreshAttached();
 
             try
             {
                 if (TryReadFps(out int fps))
                 {
                     lock (_lock) _samples.Add(fps);
-                    LastFps = fps;
+                    _lastFps = fps;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Debug($"[MEM] TryReadFps failed: {ex.Message}");
+            }
 
             if (tick % 100 == 0 && tick > 0)
             {
-                var active = _attached.Where(a => a.HasValidFps).ToList();
-                Log.Debug($"[MEM] t={tick / 20}s | процессов: {_attached.Count}, валидных: {active.Count}, сэмплов: {SampleCount}, FPS={LastFps}");
+                int active = _attached.Count(a => a.HasValidFps);
+                Log.Debug($"[MEM] t={tick / 20}s | процессов: {_attached.Count}, валидных: {active}, сэмплов: {SampleCount}, FPS={LastFps}");
             }
 
             tick++;
-            try { await Task.Delay(50, ct); } catch (TaskCanceledException) { break; }
+            try { await Task.Delay(50, ct).ConfigureAwait(false); }
+            catch (TaskCanceledException) { break; }
         }
     }
 
@@ -159,26 +190,18 @@ public class MemoryFpsMonitor : IDisposable
         if (samples.Count < 50)
             return new MemoryFpsStats { SampleCount = samples.Count, RawSampleCount = samples.Count };
 
-        // === Адаптивный эталон по хвосту выборки ===
-        // Бенчмарк заканчивается в геймплейной сцене, поэтому последние сэмплы
-        // надёжно описывают "нормальный" FPS. Медиана хвоста — наш якорь.
-        // Это устойчиво к warmup/меню, которые могут занимать до 50% выборки.
-        int tailSize = Math.Max(20, samples.Count / 20); // ~5% выборки или минимум 20
+        int tailSize = Math.Max(20, samples.Count / 20);
         var tail = samples.Skip(samples.Count - tailSize).OrderBy(x => x).ToList();
         double reference = tail[tail.Count / 2];
 
-        // Симметричный коридор ±50% от эталона.
-        // Warmup-выбросы (в 2-3x выше геймплея) гарантированно отсекаются.
         double lo = reference * 0.5;
         double hi = reference * 1.5;
         var filtered = samples.Where(x => x >= lo && x <= hi).ToList();
 
-        // Защита: если фильтр отсёк слишком много — значит эталон ненадёжен, берём всё.
         if (filtered.Count < 20) filtered = samples;
 
         var sorted = filtered.OrderBy(x => x).ToList();
         var sortedAll = samples.OrderBy(x => x).ToList();
-        var end = _stoppedAt ?? DateTime.UtcNow;
 
         return new MemoryFpsStats
         {
@@ -189,10 +212,19 @@ public class MemoryFpsMonitor : IDisposable
             Avg = filtered.Average(),
             Min = sorted.First(),
             Max = sorted.Last(),
-            P1 = sorted[Math.Max(0, (int)(sorted.Count * 0.01))],
-            P5 = sorted[Math.Max(0, (int)(sorted.Count * 0.05))],
-            Duration = end - _startedAt
+            P1 = Percentile(sorted, 0.01),
+            P5 = Percentile(sorted, 0.05),
+            Duration = _watch.Elapsed
         };
+    }
+
+    private static int Percentile(List<int> sorted, double p)
+    {
+        if (sorted.Count == 0) return 0;
+        int idx = (int)Math.Floor((sorted.Count - 1) * p);
+        if (idx < 0) idx = 0;
+        if (idx >= sorted.Count) idx = sorted.Count - 1;
+        return sorted[idx];
     }
 
     public void Dispose()
@@ -203,6 +235,8 @@ public class MemoryFpsMonitor : IDisposable
             try { CloseHandle(ap.Handle); } catch { }
         }
         _attached.Clear();
+        _cts?.Dispose();
+        _cts = null;
     }
 }
 

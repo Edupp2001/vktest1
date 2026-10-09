@@ -1,47 +1,64 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
-/// <summary>
 /// Запускает игру через Steam-клиент: steam.exe -applaunch <appid> <args>.
-/// Steam сам передаст аргументы и не будет показывать диалог подтверждения,
-/// потому что запуск идёт "изнутри" клиента.
-/// </summary>
+/// Steam сам передаст аргументы и не будет показывать диалог подтверждения.
+
 public static class SteamLauncher
 {
-    /// <summary>
-    /// Ищет steam.exe через реестр, потом по типовым путям.
-    /// </summary>
+    ///Ищет steam.exe через реестр, libraryfolders.vdf и типовые пути.</summary>
     public static string? FindSteamExePath()
     {
-        // 1. Реестр — самый надёжный
-        try
+        foreach (var p in EnumerateSteamCandidates())
         {
-            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
-            var path = key?.GetValue("SteamExe") as string;
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                return path;
+            var exe = Path.Combine(p, "steam.exe");
+            if (File.Exists(exe)) return exe;
         }
-        catch { /* игнорируем — попробуем ниже */ }
-
-        // 2. Стандартные пути установки
-        var candidates = new[]
-        {
-            @"C:\Program Files (x86)\Steam\steam.exe",
-            @"C:\Program Files\Steam\steam.exe",
-            @"D:\Steam\steam.exe",
-            @"D:\Program Files (x86)\Steam\steam.exe",
-            @"E:\Steam\steam.exe"
-        };
-        return candidates.FirstOrDefault(File.Exists);
+        return null;
     }
 
-    /// <summary>
+    private static IEnumerable<string> EnumerateSteamCandidates()
+    {
+        // HKCU (основной) и HKLM (для системных установок)
+        foreach (var (hive, sub) in new[]
+        {
+            (Registry.CurrentUser,  @"Software\Valve\Steam"),
+            (Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam"),
+            (Registry.LocalMachine, @"SOFTWARE\Valve\Steam"),
+        })
+        {
+            string? path = null;
+            try
+            {
+                using var key = hive.OpenSubKey(sub);
+                path = key?.GetValue("SteamPath") as string
+                    ?? key?.GetValue("InstallPath") as string;
+            }
+            catch { /* нет доступа — идём дальше */ }
+
+            if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+                yield return path!.Replace('/', '\\');
+        }
+
+        // Типовые пути на всех фиксированных дисках
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            if (!drive.IsReady || drive.DriveType != DriveType.Fixed) continue;
+            var root = drive.RootDirectory.FullName;
+            yield return Path.Combine(root, "Program Files (x86)", "Steam");
+            yield return Path.Combine(root, "Program Files", "Steam");
+            yield return Path.Combine(root, "Steam");
+            yield return Path.Combine(root, "SteamLibrary");
+        }
+    }
+
     /// Запускает игру через Steam. Возвращает true, если удалось стартовать steam.exe.
     /// Сама игра стартует асинхронно, прицепку к процессу делает MemoryFpsMonitor.
-    /// </summary>
     public static bool LaunchGame(int appId, string arguments = "")
     {
         var steamExe = FindSteamExePath();
@@ -59,13 +76,13 @@ public static class SteamLauncher
 
         try
         {
-            Process.Start(new ProcessStartInfo
+            using var proc = Process.Start(new ProcessStartInfo
             {
                 FileName = steamExe,
                 Arguments = cmdArgs,
                 UseShellExecute = false
             });
-            return true;
+            return proc != null;
         }
         catch (Exception ex)
         {

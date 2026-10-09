@@ -1,15 +1,17 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Microsoft.Win32;
 
 // ===================== ГЛОБАЛЬНЫЕ НАСТРОЙКИ =====================
-CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
-CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
-Console.OutputEncoding = Encoding.UTF8;
+try { Console.OutputEncoding = Encoding.UTF8; }
+catch { /* на некоторых Win10-консолях бросает — не критично */ }
 
 // ===================== АРГУМЕНТЫ =====================
 bool verbose = args.Any(a =>
@@ -22,10 +24,21 @@ Log.Verbose = verbose;
 // ===================== КОНФИГУРАЦИЯ =====================
 const int STEAM_APP_ID = 3132990;
 const string GAME_PROCESS = "b1-Win64-Shipping";
+const string GAME_FOLDER = "Black Myth Wukong Benchmark Tool";
 
-string gamePath = @"C:\Program Files (x86)\Steam\steamapps\common\Black Myth Wukong Benchmark Tool";
-string iniPath = Path.Combine(gamePath, @"b1\Saved\Config\Windows\GameUserSettings.ini");
-string exePath = Path.Combine(gamePath, @"b1\Binaries\Win64\b1-Win64-Shipping.exe");
+string? gamePath = ResolveGamePath(args);
+if (gamePath == null)
+{
+    Log.Error("Не удалось найти папку с игрой.");
+    Log.Error("Укажите путь одним из способов:");
+    Log.Error("  --game-path \"D:\\Games\\Black Myth Wukong Benchmark Tool\"");
+    Log.Error("  переменная окружения GAME_PATH");
+    Environment.Exit(1);
+    return; // unreachable, нужно для компилятора
+}
+
+string iniPath = Path.Combine(gamePath, "b1", "Saved", "Config", "Windows", "GameUserSettings.ini");
+string exePath = Path.Combine(gamePath, "b1", "Binaries", "Win64", "b1-Win64-Shipping.exe");
 
 // ===================== ПРЕДВАРИТЕЛЬНЫЕ ПРОВЕРКИ =====================
 if (!File.Exists(iniPath))
@@ -33,18 +46,21 @@ if (!File.Exists(iniPath))
     Log.Error($"Не найден конфиг игры: {iniPath}");
     Log.Error("Проверьте, что Black Myth: Wukong Benchmark Tool установлен.");
     Environment.Exit(1);
+    return;
 }
 
 if (!File.Exists(exePath))
 {
     Log.Error($"Не найден исполняемый файл игры: {exePath}");
     Environment.Exit(1);
+    return;
 }
 
-if (Process.GetProcessesByName(GAME_PROCESS).Length > 0)
+if (IsProcessRunning(GAME_PROCESS))
 {
     Log.Error($"Игра уже запущена ({GAME_PROCESS}). Закройте её и попробуйте снова.");
     Environment.Exit(1);
+    return;
 }
 
 Log.Debug("=== Параметры запуска ===");
@@ -61,16 +77,15 @@ var history = new BenchmarkHistoryReader(GAME_PROCESS);
 
 config.Backup();
 
-// Регистрируем graceful shutdown ДО запуска игры.
 GracefulShutdown.Register(() =>
 {
     Log.Warn("Останавливаем игру и восстанавливаем GameUserSettings.ini...");
     KillAll();
-    try { config.Restore(); } catch { }
+    try { config.Restore(); }
+    catch (Exception ex) { Log.Error($"Не удалось восстановить конфиг: {ex.Message}"); }
 });
 
 int exitCode = 0;
-BenchmarkReport? report = null;
 
 try
 {
@@ -79,8 +94,6 @@ try
     config.ApplyCpuSettings();
     var (cpuJson, cpuMem) = await RunOneBenchmark(exePath, STEAM_APP_ID, history);
     KillAll();
-
-    // Небольшая пауза — чтобы Steam/игра корректно завершили свои процессы.
     await WaitForProcessExitAsync(GAME_PROCESS, TimeSpan.FromSeconds(15));
 
     // ===================== GPU-ТЕСТ =====================
@@ -91,7 +104,7 @@ try
     KillAll();
 
     // ===================== ОТЧЁТ =====================
-    report = new BenchmarkReport
+    var report = new BenchmarkReport
     {
         System = new BenchmarkReport.SystemInfoDto
         {
@@ -124,12 +137,103 @@ catch (Exception ex)
     exitCode = ex is FileNotFoundException ? 1 : 2;
 }
 
-
 Environment.Exit(exitCode);
+
 
 // ============================================================
 //                  ЛОКАЛЬНЫЕ ФУНКЦИИ
 // ============================================================
+
+static bool IsProcessRunning(string name)
+{
+    var procs = Process.GetProcessesByName(name);
+    try { return procs.Length > 0; }
+    finally { foreach (var p in procs) p.Dispose(); }
+}
+
+static string? ResolveGamePath(string[] args)
+{
+    // 1. CLI: --game-path <path>
+    for (int i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i].Equals("--game-path", StringComparison.OrdinalIgnoreCase))
+        {
+            var p = args[i + 1];
+            if (Directory.Exists(p)) return p;
+            Log.Warn($"Путь из --game-path не существует: {p}");
+        }
+    }
+
+    // 2. Env
+    var env = Environment.GetEnvironmentVariable("GAME_PATH");
+    if (!string.IsNullOrWhiteSpace(env) && Directory.Exists(env))
+        return env;
+
+    // 3. Steam library folders (реестр + libraryfolders.vdf)
+    var fromSteam = FindViaSteamLibraries(GAME_FOLDER);
+    if (fromSteam != null) return fromSteam;
+
+    // 4. Обход всех фиксированных дисков
+    foreach (var drive in DriveInfo.GetDrives())
+    {
+        if (!drive.IsReady || drive.DriveType != DriveType.Fixed) continue;
+
+        var root = drive.RootDirectory.FullName;
+        string[] candidates =
+        {
+            Path.Combine(root, "Program Files (x86)", "Steam", "steamapps", "common", GAME_FOLDER),
+            Path.Combine(root, "Program Files", "Steam", "steamapps", "common", GAME_FOLDER),
+            Path.Combine(root, "Steam", "steamapps", "common", GAME_FOLDER),
+            Path.Combine(root, "SteamLibrary", "steamapps", "common", GAME_FOLDER),
+            Path.Combine(root, "Games", "Steam", "steamapps", "common", GAME_FOLDER),
+        };
+        foreach (var c in candidates)
+            if (Directory.Exists(c)) return c;
+    }
+
+    return null;
+}
+
+static string? FindViaSteamLibraries(string gameFolderName)
+{
+    try
+    {
+        string? steamPath = null;
+
+        // SteamPath хранится в HKCU. Пишем через RegEx, чтобы не тянуть лишние зависимости.
+        using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam"))
+            steamPath = key?.GetValue("SteamPath") as string;
+
+        if (string.IsNullOrEmpty(steamPath)) return null;
+        steamPath = steamPath.Replace('/', '\\');
+
+        var libraries = new List<string> { steamPath };
+        var vdfPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+
+        if (File.Exists(vdfPath))
+        {
+            // Простейший парсер VDF: строки вида   "path"		"D:\\SteamLibrary"
+            var re = new Regex("^\\s*\"path\"\\s*\"([^\"]+)\"", RegexOptions.IgnoreCase);
+            foreach (var line in File.ReadLines(vdfPath))
+            {
+                var m = re.Match(line);
+                if (m.Success)
+                    libraries.Add(m.Groups[1].Value.Replace(@"\\", @"\"));
+            }
+        }
+
+        foreach (var lib in libraries)
+        {
+            var candidate = Path.Combine(lib, "steamapps", "common", gameFolderName);
+            if (Directory.Exists(candidate)) return candidate;
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Debug($"[STEAM] Не удалось прочитать библиотеки Steam: {ex.Message}");
+    }
+    return null;
+}
 
 static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
     string exePath, int steamAppId, BenchmarkHistoryReader history)
@@ -144,7 +248,7 @@ static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
     if (!viaSteam)
     {
         Log.Warn("Steam-launch не удался, fallback на прямой запуск .exe");
-        Process.Start(new ProcessStartInfo
+        using var proc = Process.Start(new ProcessStartInfo
         {
             FileName = exePath,
             Arguments = "-benchmark",
@@ -158,7 +262,7 @@ static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
         Log.Debug("[STEAM] Запуск через -applaunch: диалог не ожидается");
     }
 
-    using var monitor = new MemoryFpsMonitor("b1-Win64-Shipping");
+    using var monitor = new MemoryFpsMonitor(GAME_PROCESS);
     monitor.Start();
     Log.Debug("[MEM] Сэмплирование запущено");
 
@@ -175,10 +279,10 @@ static async Task<(BenchmarkResult json, MemoryFpsStats mem)> RunOneBenchmark(
 
 static async Task WaitForProcessExitAsync(string processName, TimeSpan timeout)
 {
-    var deadline = DateTime.UtcNow + timeout;
-    while (DateTime.UtcNow < deadline)
+    long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+    while (Environment.TickCount64 < deadline)
     {
-        if (Process.GetProcessesByName(processName).Length == 0) return;
+        if (!IsProcessRunning(processName)) return;
         await Task.Delay(250);
     }
     Log.Warn($"Процесс {processName} не завершился за {timeout.TotalSeconds:F0}с");
@@ -233,10 +337,18 @@ static void KillAll()
 {
     foreach (var name in new[] { "b1-Win64-Shipping", "b1_benchmark", "EpicWebHelper" })
     {
-        foreach (var p in Process.GetProcessesByName(name))
+        var procs = Process.GetProcessesByName(name);
+        try
         {
-            try { p.Kill(entireProcessTree: true); Log.Debug($"Убит {name} PID={p.Id}"); }
-            catch { }
+            foreach (var p in procs)
+            {
+                try { p.Kill(entireProcessTree: true); Log.Debug($"Убит {name} PID={p.Id}"); }
+                catch (Exception ex) { Log.Debug($"Не удалось убить {name} PID={p.Id}: {ex.Message}"); }
+            }
+        }
+        finally
+        {
+            foreach (var p in procs) p.Dispose();
         }
     }
 }

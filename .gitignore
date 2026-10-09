@@ -1,0 +1,83 @@
+## ─── .NET / Visual Studio ──────────────────────────────
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+build/
+bld/
+out/
+publish/
+artifacts/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+.vs/
+
+## ─── Rider / JetBrains ─────────────────────────────────
+.idea/
+*.sln.iml
+_ReSharper*/
+*.DotSettings.user
+
+## ─── VS Code ───────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+## ─── NuGet ─────────────────────────────────────────────
+*.nupkg
+*.snupkg
+packages/
+!packages/build/
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+## ─── Build / publish ───────────────────────────────────
+*.pdb
+*.cache
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+
+## ─── OS ────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+## ─── App-specific (этот проект) ────────────────────────
+# бэкап GameUserSettings.ini, который делает программа
+GameUserSettings.ini.backup
+*.ini.backup
+
+# отчёты бенчмарка
+benchmark_*.json
+
+# логи
+*.log
+logs/
+
+## ─── Secrets ───────────────────────────────────────────
+*.pfx
+*.snk
+secrets.json
+appsettings.Development.json
+.env
+.env.local

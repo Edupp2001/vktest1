@@ -1,91 +1,122 @@
-﻿using System;
+﻿using System.Collections.Immutable;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
-/// <summary>
-/// Автоматически закрывает диалог Steam "Запустить игру с пользовательскими параметрами",
-/// который появляется при прямом запуске .exe игры с аргументами.
-/// </summary>
-public static class SteamPopupHandler
+public static partial class SteamPopupHandler
 {
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr FindWindow(string? lpClassName, string lpWindowName);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-
-    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
     private const uint BM_CLICK = 0x00F5;
+    private const int PollIntervalMs = 300;
+    private const int MaxWindowTextLength = 256;
 
-    private static readonly string[] WindowTitles = {
+    private static readonly ImmutableArray<string> WindowTitles = ImmutableArray.Create(
         "Запустить игру с пользовательскими параметрами",
         "Launch game with custom parameters",
         "启动游戏自定义参数",
         "Spiel mit benutzerdefinierten Parametern starten"
-    };
+    );
 
-    private static readonly string[] ContinueButtonTexts = {
+    private static readonly ImmutableArray<string> ContinueButtonTexts = ImmutableArray.Create(
         "Продолжить", "Continue", "继续", "Fortfahren", "OK"
-    };
+    );
 
-    public static async Task DismissAsync(TimeSpan timeout)
+    private static readonly EnumWindowsProc s_enumProc = OnEnumChildWindow;
+
+    [ThreadStatic] private static char[]? t_textBuffer;
+    [ThreadStatic] private static IntPtr t_foundButton;
+
+    public static async Task DismissAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        var deadline = DateTime.UtcNow + timeout;
-
-        while (DateTime.UtcNow < deadline)
+        if (timeout <= TimeSpan.Zero)
         {
-            foreach (var title in WindowTitles)
-            {
-                var hwnd = FindWindow(null, title);
-                if (hwnd == IntPtr.Zero) continue;
-
-                if (ClickContinueButton(hwnd))
-                {
-                    Log.Debug("[STEAM] Диалог подтверждения закрыт (fallback-режим)");
-                    return;
-                }
-            }
-            await Task.Delay(300);
+            Log.Warn($"[STEAM] DismissAsync: timeout={timeout} <= 0 — выходим");
+            return;
         }
 
-        // Сюда мы попадаем, только если за 20 секунд попап так и не нашёлся.
-        // Это странно — значит, либо Steam повёл себя нестандартно,
-        // либо пользователь вручную закрыл диалог до нас.
+        long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+
+        while (Environment.TickCount64 < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (TryDismissOnce())
+            {
+                Log.Debug("[STEAM] Диалог подтверждения закрыт");
+                return;
+            }
+
+            await Task.Delay(PollIntervalMs, cancellationToken).ConfigureAwait(false);
+        }
+
         Log.Warn($"[STEAM] Диалог не найден за {timeout.TotalSeconds:F0}с — возможен нестандартный сценарий");
+    }
+
+    private static bool TryDismissOnce()
+    {
+        foreach (var title in WindowTitles)
+        {
+            var hwnd = FindWindow(null, title);
+            if (hwnd == IntPtr.Zero) continue;
+
+            if (ClickContinueButton(hwnd)) return true;
+        }
+        return false;
     }
 
     private static bool ClickContinueButton(IntPtr parentHwnd)
     {
-        IntPtr button = IntPtr.Zero;
+        t_foundButton = IntPtr.Zero;
 
-        EnumChildWindows(parentHwnd, (hWnd, _) =>
+        if (!EnumChildWindows(parentHwnd, s_enumProc, IntPtr.Zero))
         {
-            var sb = new StringBuilder(256);
-            GetWindowText(hWnd, sb, sb.Capacity);
-            string text = sb.ToString();
+            Log.Debug($"[STEAM] EnumChildWindows failed, lastError={Marshal.GetLastPInvokeError()}");
+            return false;
+        }
 
-            foreach (var candidate in ContinueButtonTexts)
-            {
-                if (text.Equals(candidate, StringComparison.OrdinalIgnoreCase))
-                {
-                    button = hWnd;
-                    return false;
-                }
-            }
-            return true;
-        }, IntPtr.Zero);
+        if (t_foundButton == IntPtr.Zero) return false;
 
-        if (button == IntPtr.Zero) return false;
-
-        SendMessage(button, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+        var result = SendMessage(t_foundButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+        Log.Debug($"[STEAM] BM_CLICK sent, result={result}");
         return true;
     }
+
+    private static bool OnEnumChildWindow(IntPtr hWnd, IntPtr lParam)
+    {
+        var buffer = t_textBuffer ??= new char[MaxWindowTextLength];
+
+        int len = GetWindowText(hWnd, buffer, buffer.Length);
+        if (len <= 0) return true;
+
+        string text = new string(buffer, 0, len);
+
+        foreach (var candidate in ContinueButtonTexts)
+        {
+            if (string.Equals(text, candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                t_foundButton = hWnd;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // ───────────────────── P/Invoke (source-generated) ─────────────────────
+
+    [LibraryImport("user32.dll", EntryPoint = "FindWindowW",
+        StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    private static partial IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool EnumChildWindows(
+        IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW",
+        StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    private static partial int GetWindowText(IntPtr hWnd, [Out] char[] lpString, int nMaxCount);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW", SetLastError = true)]
+    private static partial IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 }

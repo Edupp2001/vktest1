@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 public class BenchmarkHistoryReader
 {
@@ -11,67 +14,87 @@ public class BenchmarkHistoryReader
 
     public BenchmarkHistoryReader(string gameProcessName = "b1-Win64-Shipping")
     {
-        _historyFolder = Path.Combine(Path.GetTempPath(), "b1", "BenchMarkHistory", "Tool");
         _gameProcessName = gameProcessName;
+        _historyFolder = Path.Combine(Path.GetTempPath(), "b1", "BenchMarkHistory", "Tool");
         Log.Debug($"Папка истории: {_historyFolder}");
     }
 
     public DateTime GetLatestFileTimestamp()
     {
         if (!Directory.Exists(_historyFolder)) return DateTime.MinValue;
+
         var latest = new DirectoryInfo(_historyFolder)
-            .GetFiles("*", SearchOption.TopDirectoryOnly)
+            .GetFiles("*.json", SearchOption.TopDirectoryOnly)
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .FirstOrDefault();
+
         return latest?.LastWriteTimeUtc ?? DateTime.MinValue;
     }
 
     /// <summary>
-    /// Ждёт появления нового файла результатов. Без фиксированного таймаута:
-    /// выход происходит по появлению файла ИЛИ по смерти игрового процесса.
+    /// Ждёт появления нового файла результатов.
+    /// Выход: новый файл, смерть процесса + 5с форы, или общий таймаут.
     /// </summary>
-    public async Task<FileInfo> WaitForNewFileAsync(DateTime previousTimestamp)
+    public async Task<FileInfo> WaitForNewFileAsync(
+        DateTime previousTimestamp,
+        TimeSpan? overallTimeout = null,
+        CancellationToken cancellationToken = default)
     {
+        long deadline = overallTimeout.HasValue
+            ? Environment.TickCount64 + (long)overallTimeout.Value.TotalMilliseconds
+            : long.MaxValue;
+
         int missingProcessCount = 0;
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (Environment.TickCount64 >= deadline)
+                throw new TimeoutException(
+                    $"Файл результатов не появился за {overallTimeout!.Value.TotalSeconds:F0}с");
+
             var newest = FindNewestFile();
             if (newest != null && newest.LastWriteTimeUtc > previousTimestamp)
             {
                 Log.Debug($"[HIST] Новый файл результатов: {newest.Name}");
-                await WaitForFileStableAsync(newest);
+                await WaitForFileStableAsync(newest, cancellationToken);
                 return newest;
             }
 
-            // Проверяем, жив ли ещё процесс игры. Если игра упала — нет смысла ждать.
             bool gameAlive = Process.GetProcessesByName(_gameProcessName).Length > 0;
             if (!gameAlive)
             {
                 missingProcessCount++;
-                // Даём 5 секунд форы: файл может появиться с задержкой после смерти процесса.
                 if (missingProcessCount >= 10)
-                    throw new Exception("Игровой процесс завершился, но файл результатов не появился");
+                    throw new InvalidOperationException(
+                        "Игровой процесс завершился, но файл результатов не появился");
             }
             else
             {
                 missingProcessCount = 0;
             }
 
-            await Task.Delay(500);
+            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    /// <summary>
-    /// Дожидается, пока файл перестанет расти. Заменяет фиксированный Sleep(1500).
-    /// </summary>
-    private static async Task WaitForFileStableAsync(FileInfo file)
+    private static async Task WaitForFileStableAsync(FileInfo file, CancellationToken ct)
     {
         long lastSize = -1;
         int stableCount = 0;
+        long deadline = Environment.TickCount64 + 15_000; // защита от вечного цикла
 
         while (stableCount < 3)
         {
+            ct.ThrowIfCancellationRequested();
+
+            if (Environment.TickCount64 >= deadline)
+            {
+                Log.Warn($"[HIST] Файл {file.Name} не стабилизировался за 15с, читаем как есть");
+                return;
+            }
+
             try
             {
                 long size = new FileInfo(file.FullName).Length;
@@ -79,9 +102,9 @@ public class BenchmarkHistoryReader
                 else stableCount = 0;
                 lastSize = size;
             }
-            catch { /* файл ещё не готов к чтению */ }
+            catch (IOException) { /* файл ещё не готов */ }
 
-            await Task.Delay(200);
+            await Task.Delay(200, ct).ConfigureAwait(false);
         }
     }
 
@@ -89,37 +112,69 @@ public class BenchmarkHistoryReader
     {
         if (!Directory.Exists(_historyFolder)) return null;
         return new DirectoryInfo(_historyFolder)
-            .GetFiles("*", SearchOption.TopDirectoryOnly)
+            .GetFiles("*.json", SearchOption.TopDirectoryOnly)
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .FirstOrDefault();
     }
 
     public BenchmarkResult Read(FileInfo file)
     {
-        using var stream = File.OpenRead(file.FullName);
-        using var doc = JsonDocument.Parse(stream);
-        var root = doc.RootElement;
-
-        return new BenchmarkResult
+        try
         {
-            Timestamp = root.TryGetProperty("TimeStamp", out var ts) ? ts.GetInt64() : 0,
-            AvgFps = root.TryGetProperty("FPSAvg", out var a) ? a.GetDouble() : 0,
-            MaxFps = root.TryGetProperty("FPSMax", out var mx) ? mx.GetDouble() : 0,
-            MinFps = root.TryGetProperty("FPSMin", out var mn) ? mn.GetDouble() : 0,
-            P95Fps = root.TryGetProperty("FPS95", out var p) ? p.GetDouble() : 0,
-            CpuAvg = root.TryGetProperty("CPUAvg", out var c) ? c.GetDouble() : 0,
-            GpuAvg = root.TryGetProperty("GPUAvg", out var g) ? g.GetDouble() : 0,
-            CpuModel = root.TryGetProperty("CPUModel", out var cm) ? cm.GetString()?.Trim() ?? "" : "",
-            GpuModel = root.TryGetProperty("GPUModel", out var gm) ? gm.GetString() ?? "" : "",
-            GpuDriver = root.TryGetProperty("GpuDriverVer", out var gd) ? gd.GetString() ?? "" : "",
-            SysMem = root.TryGetProperty("SysMem", out var sm) ? sm.GetString() ?? "" : "",
-            VideoMem = root.TryGetProperty("VideoMemSize", out var vm) ? vm.GetString() ?? "" : "",
-            Resolution = root.TryGetProperty("ScreenResolution", out var r) ? r.GetString() ?? "" : "",
-            QualityLevel = root.TryGetProperty("QualityLevel", out var q) ? q.GetInt32() : 0,
-            Rtx = root.TryGetProperty("Rtx", out var rt) ? rt.GetInt32() : 0,
-            Dlss = root.TryGetProperty("Dlss", out var dl) ? dl.GetInt32() : 0,
-            MotionBlur = root.TryGetProperty("MotionBlur", out var mb) ? mb.GetInt32() : 0,
-        };
+            using var stream = File.OpenRead(file.FullName);
+            using var doc = JsonDocument.Parse(stream);
+            var root = doc.RootElement;
+
+            return new BenchmarkResult
+            {
+                Timestamp = GetInt64(root, "TimeStamp"),
+                AvgFps = GetDouble(root, "FPSAvg"),
+                MaxFps = GetDouble(root, "FPSMax"),
+                MinFps = GetDouble(root, "FPSMin"),
+                P95Fps = GetDouble(root, "FPS95"),
+                CpuAvg = GetDouble(root, "CPUAvg"),
+                GpuAvg = GetDouble(root, "GPUAvg"),
+                CpuModel = GetString(root, "CPUModel")?.Trim() ?? "",
+                GpuModel = GetString(root, "GPUModel") ?? "",
+                GpuDriver = GetString(root, "GpuDriverVer") ?? "",
+                SysMem = GetString(root, "SysMem") ?? "",
+                VideoMem = GetString(root, "VideoMemSize") ?? "",
+                Resolution = GetString(root, "ScreenResolution") ?? "",
+                QualityLevel = GetInt32(root, "QualityLevel"),
+                Rtx = GetInt32(root, "Rtx"),
+                Dlss = GetInt32(root, "Dlss"),
+                MotionBlur = GetInt32(root, "MotionBlur"),
+            };
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException($"Некорректный JSON в {file.Name}: {ex.Message}", ex);
+        }
+    }
+
+    private static long GetInt64(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var v)) return 0;
+        return v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var r) ? r : 0;
+    }
+
+    private static int GetInt32(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var v)) return 0;
+        return v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var r) ? r : 0;
+    }
+
+    private static double GetDouble(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var v)) return 0;
+        if (v.ValueKind != JsonValueKind.Number) return 0;
+        return v.TryGetDouble(out var r) ? r : 0;
+    }
+
+    private static string? GetString(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var v)) return null;
+        return v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
 }
 

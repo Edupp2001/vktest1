@@ -1,6 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 public class BenchmarkReport
@@ -10,6 +8,13 @@ public class BenchmarkReport
     public BenchmarkPair Cpu { get; set; } = new();
     public BenchmarkPair Gpu { get; set; } = new();
     public ValidationDto Validation { get; set; } = new();
+
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter(), new UtcDateTimeConverter() }
+    };
 
     public class SystemInfoDto
     {
@@ -36,16 +41,28 @@ public class BenchmarkReport
 
     public string SaveToFile(string? outputPath = null)
     {
-        outputPath ??= Path.Combine(AppContext.BaseDirectory,
-            $"benchmark_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+        outputPath ??= Path.Combine(
+            AppContext.BaseDirectory,
+            $"benchmark_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json");
 
-        var options = new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        };
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
 
-        File.WriteAllText(outputPath, JsonSerializer.Serialize(this, options));
+        File.WriteAllText(outputPath, JsonSerializer.Serialize(this, s_jsonOptions));
         return outputPath;
     }
+}
+
+/// <summary>
+/// Сериализует DateTime как ISO 8601 UTC со суффиксом Z, чтобы читатель
+/// однозначно понимал, что это UTC (иначе теряется Kind).
+/// </summary>
+internal sealed class UtcDateTimeConverter : JsonConverter<DateTime>
+{
+    public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.GetDateTime().ToUniversalTime();
+
+    public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value.ToUniversalTime().ToString("o"));
 }
