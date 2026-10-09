@@ -77,3 +77,4 @@
 dotnet publish -c Release -r win-x64 --self-contained `
   -p:PublishSingleFile=true `
   -p:EnableCompressionInSingleFile=true
+или используйте release
